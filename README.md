@@ -1,77 +1,90 @@
-<div align="center">
-  <h1>🌌 Synthetica</h1>
-  <p><strong>Autonomous Research Sanctuary & Semantic Knowledge Graph</strong></p>
+# Synthetica
 
-  <img src="https://img.shields.io/badge/Next.js-14-black?style=for-the-badge&logo=next.js" alt="Next.js" />
-  <img src="https://img.shields.io/badge/Supabase-Database-3ECF8E?style=for-the-badge&logo=supabase&logoColor=white" alt="Supabase" />
-  <img src="https://img.shields.io/badge/Vercel-000000?style=for-the-badge&logo=vercel&logoColor=white" alt="Vercel" />
-  <img src="https://img.shields.io/badge/Tailwind_CSS-38B2AC?style=for-the-badge&logo=tailwind-css&logoColor=white" alt="Tailwind CSS" />
-</div>
+A private workspace for understanding research and tracing explanations back to original passages.
 
-<br />
+This branch replaces the impact-ranked summary feed with a source-first workflow:
 
-> Synthetica is a high-performance, professional-grade research aggregation platform designed to serve as a distraction-free "reading sanctuary." It eliminates the cognitive overload of standard academic databases by autonomously fetching, interpreting, and visualizing prestige research across Artificial Intelligence, Clinical Oncology, and Quantitative Sports Analytics.
+1. **Analyze:** import a text PDF, HTML/TXT file, DOI, HTTPS paper URL, or pasted original text.
+2. **Understand:** read the retained source alongside a structured explanation. Expand each citation to inspect the exact quote, passage context, section, and PDF page.
+3. **Investigate:** group up to six papers around a question, compare their extracted methods and limitations, and request a cited cross-paper synthesis.
+4. **Keep your work:** save private notes, source quotations, tags, reading status, conversations, and collections. Export a Markdown research brief.
 
----
+## Trust and limits
 
-## ✨ Core Features
+- **Source facts** are verbatim quotations. **AI interpretations** include explanations and paraphrases with quotations checked against the original stored passages. An exact quotation does **not** establish that the model's interpretation is correct.
+- Questions retrieve original text on the server. The client cannot submit a generated summary as evidence. Unsupported or invalidly cited answers produce an explicit unavailable state.
+- Uploaded PDFs retain page numbers. HTML and pasted text retain section references. Abstracts and web pages are labelled _provided text_, never silently promoted to full papers. Scanned PDFs require external OCR.
+- Limits: 3 MB per file/remote document, 100 PDF pages, 400,000 extracted characters. The file limit accommodates base64 within common serverless request limits. Import has an independent authenticated quota.
+- PDF tables/figures are **not** reconstructed as structured data. HTML table/caption text is retained, but no automatic charts are generated. Legacy inferred charts and model-generated impact scores are never displayed.
+- Search and Q&A retrieval use PostgreSQL full-text search and deterministic lexical passage ranking, respectively. They are not advertised as semantic search or a knowledge graph.
+- DOI and URL imports retrieve the accessible destination, which can be an abstract or landing page. They do not bypass paywalls, do title lookup, or guarantee access to full text.
+- Cross-paper interpretations require citations from at least two selected papers; matching quotes alone cannot prove agreement or contradiction. Synthesis is generated on demand; it is not a systematic review.
 
-* 🧠 **The Pedagogical Engine:** Bypasses generic summarization by enforcing a strict academic breakdown. The AI autonomously extracts the core problem, technical methodology, and key metrics, generating dynamic data charts and assigning a venue-based "Impact Score" to every paper.
-* 🌌 **Semantic Discovery (Galaxy Map):** A physics-based, interactive 2D/3D knowledge graph powered by vector embeddings. Papers are connected not by simple keywords, but by deep mathematical similarities (thresholds > 60%). Features raycasting focus and an in-graph extraction panel.
-* 📖 **Magazine-Grade UI:** Built with Next.js 14 and Tailwind CSS, the platform organizes complex domains into horizontal scrolling carousels, maintaining a clean, premium reading experience.
-* 🛡️ **Resilient Data Pipeline:** A bulletproof Node.js backfill engine with exponential backoff and auto-retry logic. It securely handles API rate limits (HTTP 429) and server spikes (HTTP 503).
+See [the implementation scope](docs/product-reset.md), [deployment and credential remediation](docs/deployment.md), and [security policy](SECURITY.md).
 
-## 🧰 Tech Stack
+## Local setup
 
-| Layer | Technology Used |
-| :--- | :--- |
-| **Frontend Architecture** | Next.js 14 (App Router), React, Tailwind CSS, Lucide React |
-| **Data Visualization** | Recharts (Dynamic Charting), React-Force-Graph-2D |
-| **Backend & Storage** | Supabase (PostgreSQL), `pgvector` (Cosine Similarity Search) |
-| **Hosting & Automation** | Vercel (Serverless Edge Functions, Automated Cron Jobs) |
-| **AI & Machine Learning** | Google Generative AI (`gemini-3.6-flash`, `text-embedding-004`) |
-| **Academic APIs** | ArXiv API (CS/AI), Europe PMC REST API (Genomics/Oncology) |
+Requires Node.js 22.13+ and a Supabase project. Application routes use the public anon key plus the authenticated user's bearer token; **no service-role key is needed**.
 
----
-
-## 🚀 Local Installation & Setup
-
-**1. Clone the repository**
-```bash
-git clone [https://github.com/yourusername/synthetica.git](https://github.com/yourusername/synthetica.git)
+```sh
+git clone https://github.com/Bad33/synthetica.git
 cd synthetica
+npm ci
+cp .env.example .env.local
 ```
 
-**2. Install dependencies**
-```bash
-npm install
-npm install dotenv
-```
-**3. Configure Environment Variables**
-Create a .env.local file in the root directory:
-```bash
-NEXT_PUBLIC_SUPABASE_URL=your_supabase_project_url
-NEXT_PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
-SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key
-GEMINI_API_KEY=your_google_ai_studio_key
-CRON_SECRET=your_custom_cron_password
-```
+Set the variables from `.env.example`:
 
-**4. Database Setup (Supabase SQL Editor)**
-Ensure your papers table is configured with a vector column for embeddings. Run this custom RPC function to power the Galaxy Map:
-```bash
-CREATE OR REPLACE FUNCTION get_graph_data(similarity_threshold float)
-RETURNS json
-LANGUAGE plpgsql STABLE
-AS $$ DECLARE   nodes json;   links json; BEGIN   SELECT json_agg(json_build_object('id', id, 'title', blog_title, 'category', category, 'score', trending_score, 'tldr', tldr_bullets)) INTO nodes FROM papers;      SELECT json_agg(json_build_object('source', p1.id, 'target', p2.id, 'value', 1 - (p1.embedding <=> p2.embedding))) INTO links   FROM papers p1 JOIN papers p2 ON p1.id < p2.id   WHERE 1 - (p1.embedding <=> p2.embedding) > similarity_threshold;      RETURN json_build_object('nodes', COALESCE(nodes, '[]'::json), 'links', COALESCE(links, '[]'::json)); END; $$;
-```
+| Variable                        | Purpose                                                       |
+| ------------------------------- | ------------------------------------------------------------- |
+| `NEXT_PUBLIC_SUPABASE_URL`      | Supabase project URL                                          |
+| `NEXT_PUBLIC_SUPABASE_ANON_KEY` | Public Supabase anon key                                      |
+| `GEMINI_API_KEY`                | Server-only Google API key                                    |
+| `GEMINI_EXTRACTION_MODEL`       | A text-generation model ID enabled for your Google account    |
+| `GEMINI_QA_MODEL`               | Optional separate Q&A model; defaults to the extraction model |
 
-**5. Run the Development Server**
-```bash
+No guessed or outdated model ID is hard-coded. Missing AI configuration fails closed with a clear message; source import and reading remain available.
+
+Apply **all** migrations in `supabase/migrations/` in filename order to a fresh Supabase database. Use your linked Supabase CLI migration workflow (`supabase db push`) or the SQL editor. Existing installations that already applied `00001` apply only the new migrations. Back up first; see deployment notes for legacy data handling.
+
+Create user accounts through Supabase Auth administration and keep public sign-ups disabled for this invite-only release. Set a password for each account through your approved Supabase account onboarding flow. Users sign in with email/password. Merely hiding a registration form does not disable public registration: configure Auth on the project itself.
+
+```sh
 npm run dev
 ```
-**🧠 Running the Autonomous Data Pipeline**
-To populate the database and light up the Galaxy Map, run the standalone background script. This script fetches prestige papers, processes them through the LLM pedagogical prompt, generates 768-dimensional embeddings, and pushes the records to Supabase.
-```bash
-node backfill.mjs
+
+Open `http://localhost:3000`. With no Supabase configuration, the application displays setup guidance and makes no model requests. Use an invite-only staging project to verify real authentication, PDF imports, and the chosen model before production.
+
+## API and storage
+
+All active AI/import endpoints require `Authorization: Bearer <Supabase access token>`.
+
+| Endpoint               | Role                                                                         |
+| ---------------------- | ---------------------------------------------------------------------------- |
+| `POST /api/ingest`     | Validate, retrieve/parse, chunk, atomically save original source             |
+| `POST /api/analyze`    | Extract claims from saved passages; validate quotes; save analysis           |
+| `POST /api/chat`       | Retrieve original passages, answer, validate citations, persist conversation |
+| `POST /api/synthesize` | Compare evidence across 2–6 authorized papers                                |
+
+Personal library, notes, feedback, and collection operations use Supabase directly under owner RLS. `save_research_source` and `save_research_collection` commit related changes atomically. `consume_research_quota` enforces persistent hourly per-account limits: 10 imports, 10 analyses, 60 questions, 10 syntheses. Unknown actions and unavailable quota storage fail closed.
+
+The canonical model is `research_papers` + immutable `paper_chunks`. Analysis is a derived JSON view with typed claims and exact citations. User-owned tables also include `collections`, `collection_papers`, `notes`, `chat_messages`, and `research_feedback`. All actively used tables, indexes, functions, and policies are in migrations. Old `papers`, embedding columns, and graph functions are retained only as quarantined legacy data; the app no longer uses vector features.
+
+The old `/api/process-paper` and cron endpoints return `410 Gone`. The cron schedule and standalone backfill generator are removed. `/explore` redirects to Investigate.
+
+## Verification
+
+```sh
+npm run lint
+npm run typecheck
+npm test
+npm run test:db
+npm run build
+npx playwright install chromium
+npm run test:browser
 ```
+
+- Unit and API tests cover provenance, Unicode offsets, real PDF parsing, unsupported answers, request bounds, auth/quota ordering, invalid citations, and safe error handling. API provider responses are mocked; no paid model calls occur.
+- Database tests execute the migrations in an embedded PostgreSQL runtime (PGlite), exercise RLS with two users, check transactional rollback and cross-owner foreign keys, and verify quotas and legacy access revocation. PGlite uses its built-in UUID function in place of Supabase's `pgcrypto` extension setup.
+- Browser tests exercise sign-in, import, source expansion, chat, notes, export, collections, and mobile layout against mocked Supabase/model responses. They are UI integration tests, not proof of a live deployment.
+- CI runs these checks on pull requests. Prompt changes should retain the grounding regressions and also be evaluated on a curated, human-reviewed paper set before release; a representative human evaluation set is not yet included.
